@@ -215,7 +215,7 @@ class SimpleMessage
         $this->line(new HtmlString('<ul>'));
         
         foreach($lines as $line) {
-            $this->line(new HtmlString("<li>{$line}</li>");
+            $this->line(new HtmlString("<li>{$line}</li>"));
         }
                         
         $this->line(new HtmlString('</ul>'));
@@ -249,7 +249,7 @@ class SimpleMessage
         $this->line(new HtmlString('<ol>'));
         
         foreach($lines as $line) {
-            $this->line(new HtmlString("<li>{$line}</li>");
+            $this->line(new HtmlString("<li>{$line}</li>"));
         }
                         
         $this->line(new HtmlString('</ol>'));
