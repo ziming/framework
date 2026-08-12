@@ -8,6 +8,7 @@ use Illuminate\Routing\Route;
 use Illuminate\Session\Store;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Stringable;
 use Illuminate\Tests\Database\Fixtures\Models\Money\Price;
 use InvalidArgumentException;
 use Mockery as m;
@@ -15,6 +16,7 @@ use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\Exception\SessionNotFoundException;
 use Symfony\Component\HttpFoundation\File\UploadedFile as SymfonyUploadedFile;
+use Symfony\Component\HttpFoundation\InputBag;
 use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 use Symfony\Component\HttpFoundation\Session\SessionInterface;
 
@@ -585,6 +587,32 @@ class HttpRequestTest extends TestCase
         $this->assertInstanceOf(SymfonyUploadedFile::class, $request['file']);
     }
 
+    public function testStringMethod()
+    {
+        $request = Request::create('/', 'GET', [
+            'int' => 123,
+            'int_str' => '456',
+            'float' => 123.456,
+            'float_str' => '123.456',
+            'float_zero' => 0.000,
+            'float_str_zero' => '0.000',
+            'str' => 'abc',
+            'empty_str' => '',
+            'null' => null,
+        ]);
+        $this->assertTrue($request->string('int') instanceof Stringable);
+        $this->assertTrue($request->string('unknown_key') instanceof Stringable);
+        $this->assertSame('123', $request->string('int')->value());
+        $this->assertSame('456', $request->string('int_str')->value());
+        $this->assertSame('123.456', $request->string('float')->value());
+        $this->assertSame('123.456', $request->string('float_str')->value());
+        $this->assertSame('0', $request->string('float_zero')->value());
+        $this->assertSame('0.000', $request->string('float_str_zero')->value());
+        $this->assertSame('', $request->string('empty_str')->value());
+        $this->assertSame('', $request->string('null')->value());
+        $this->assertSame('', $request->string('unknown_key')->value());
+    }
+
     public function testBooleanMethod()
     {
         $request = Request::create('/', 'GET', ['with_trashed' => 'false', 'download' => true, 'checked' => 1, 'unchecked' => '0', 'with_on' => 'on', 'with_yes' => 'yes']);
@@ -607,6 +635,7 @@ class HttpRequestTest extends TestCase
             'nan' => 'nan',
             'mixed' => '1ab',
             'underscore_notation' => '2_000',
+            'null' => null,
         ]);
         $this->assertSame(123, $request->integer('int'));
         $this->assertSame(456, $request->integer('raw_int'));
@@ -616,6 +645,8 @@ class HttpRequestTest extends TestCase
         $this->assertSame(1, $request->integer('mixed'));
         $this->assertSame(2, $request->integer('underscore_notation'));
         $this->assertSame(123456, $request->integer('unknown_key', 123456));
+        $this->assertSame(0, $request->integer('null'));
+        $this->assertSame(0, $request->integer('null', 123456));
     }
 
     public function testFloatMethod()
@@ -629,6 +660,7 @@ class HttpRequestTest extends TestCase
             'nan' => 'nan',
             'mixed' => '1.ab',
             'scientific_notation' => '1e3',
+            'null' => null,
         ]);
         $this->assertSame(1.23, $request->float('float'));
         $this->assertSame(45.6, $request->float('raw_float'));
@@ -639,6 +671,8 @@ class HttpRequestTest extends TestCase
         $this->assertSame(1.0, $request->float('mixed'));
         $this->assertSame(1e3, $request->float('scientific_notation'));
         $this->assertSame(123.456, $request->float('unknown_key', 123.456));
+        $this->assertSame(0.0, $request->float('null'));
+        $this->assertSame(0.0, $request->float('null', 123.456));
     }
 
     public function testCollectMethod()
@@ -1525,5 +1559,49 @@ class HttpRequestTest extends TestCase
         $request = Request::create('/', 'GET', ['name' => 'Taylor', 'email' => 'foo']);
         $request->setLaravelSession($session);
         $request->flashExcept(['email']);
+    }
+
+    public function testGeneratingJsonRequestFromParentRequestUsesCorrectType()
+    {
+        if (! method_exists(SymfonyRequest::class, 'getPayload')) {
+            return;
+        }
+
+        $base = SymfonyRequest::create('/', 'POST', server: ['CONTENT_TYPE' => 'application/json'], content: '{"hello":"world"}');
+
+        $request = Request::createFromBase($base);
+
+        $this->assertInstanceOf(InputBag::class, $request->getPayload());
+        $this->assertSame('world', $request->getPayload()->get('hello'));
+    }
+
+    public function testJsonRequestsCanMergeDataIntoJsonRequest()
+    {
+        if (! method_exists(SymfonyRequest::class, 'getPayload')) {
+            return;
+        }
+
+        $base = SymfonyRequest::create('/', 'POST', server: ['CONTENT_TYPE' => 'application/json'], content: '{"first":"Taylor","last":"Otwell"}');
+        $request = Request::createFromBase($base);
+
+        $request->merge([
+            'name' => $request->get('first').' '.$request->get('last'),
+        ]);
+
+        $this->assertSame('Taylor Otwell', $request->get('name'));
+    }
+
+    public function testItCanHaveObjectsInJsonPayload()
+    {
+        if (! method_exists(SymfonyRequest::class, 'getPayload')) {
+            return;
+        }
+
+        $base = SymfonyRequest::create('/', 'POST', server: ['CONTENT_TYPE' => 'application/json'], content: '{"framework":{"name":"Laravel"}}');
+        $request = Request::createFromBase($base);
+
+        $value = $request->get('framework');
+
+        $this->assertSame(['name' => 'Laravel'], $request->get('framework'));
     }
 }
